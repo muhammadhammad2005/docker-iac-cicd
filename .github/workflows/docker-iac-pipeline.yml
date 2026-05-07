@@ -7,12 +7,12 @@ on:
     branches: [ main ]
 
 env:
-  REGISTRY: docker.io
   IMAGE_NAME: docker-iac-web
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -25,9 +25,8 @@ jobs:
       with:
         context: ./web-app
         push: false
+        load: true
         tags: ${{ env.IMAGE_NAME }}:test
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
 
     - name: Test Docker image
       run: |
@@ -41,19 +40,27 @@ jobs:
     needs: build-and-test
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/develop'
+
     steps:
-    - uses: actions/checkout@v4
-    - uses: docker/setup-buildx-action@v3
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
     - name: Build staging image
       uses: docker/build-push-action@v5
       with:
         context: ./web-app
         push: false
+        load: true
         tags: ${{ env.IMAGE_NAME }}:staging
+
     - name: Deploy to staging
       run: |
         export ENVIRONMENT=staging
         docker-compose -f docker-compose.staging.yml up -d
+
     - name: Run staging tests
       run: |
         sleep 30
@@ -63,21 +70,35 @@ jobs:
     needs: build-and-test
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
+
     steps:
-    - uses: actions/checkout@v4
-    - uses: docker/setup-buildx-action@v3
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
     - name: Build production image
       uses: docker/build-push-action@v5
       with:
         context: ./web-app
         push: false
+        load: true
         tags: ${{ env.IMAGE_NAME }}:latest
+
+    - name: Install Terraform
+      run: |
+        wget -q https://releases.hashicorp.com/terraform/1.6.0/terraform_1.6.0_linux_amd64.zip
+        unzip terraform_1.6.0_linux_amd64.zip
+        sudo mv terraform /usr/local/bin/
+
     - name: Deploy with Terraform
       run: |
         cd infrastructure
         terraform init
         terraform plan -out=tfplan
         terraform apply tfplan
+
     - name: Run production health checks
       run: |
         sleep 30
